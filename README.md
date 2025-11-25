@@ -6,5 +6,5 @@ Evolving sample weights for a given dataset and machine learning model using a G
 Steps to produce the plots for different experimental conditions:
 
 Execute main() in main.py an appropriate number of times. Put all output files in a folder called 'analysis.'
-Run the functions in analysis_simple.ipynb to collate the results in 'hv_results' folder.
+Run the functions in analysis.py to collate the results in 'hv_results' folder.
 Run simple_plots.R to generate the plots.
