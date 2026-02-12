@@ -20,8 +20,8 @@ def non_dominated_sorting(obj_scores: npt.NDArray[float], weights: npt.NDArray[f
 
     Returns:
     Tuple(fronts, rank):
-    fronts (list of numpy array of uint16): Each sublist contains the indices of solutions in the corresponding Pareto front.
-    rank (numpy array of uint16): The front rank of each solution in the population.
+    fronts (list of numpy array of int): Each sublist contains the indices of solutions in the corresponding Pareto front.
+    rank (numpy array of int): The front rank of each solution in the population.
     """
 
     # quick check to make sure that elements in scores are numpy arrays with float
@@ -72,7 +72,7 @@ def non_dominated_sorting(obj_scores: npt.NDArray[float], weights: npt.NDArray[f
 
 # calculate the crowding distance for all individuals within the population
 @typechecked
-def crowding_distance(obj_scores: npt.NDArray, count: int, front_map) -> npt.NDArray[float]:
+def crowding_distance(obj_scores: npt.NDArray[float], count: int, front_map: List[npt.NDArray[int]]) -> npt.NDArray[float]:
     """
     Calculate the crowding distance for each individual in the population.
 
@@ -86,13 +86,9 @@ def crowding_distance(obj_scores: npt.NDArray, count: int, front_map) -> npt.NDA
     """
 
     # quick check to make sure that elements in scores are numpy arrays with float
-    assert all(isinstance(x, tuple) for x in obj_scores)
+    assert all(isinstance(x, np.ndarray) for x in obj_scores)
     # make sure all elements are of the correct type
-    assert all(isinstance(x[0], (float, np.floating)) for x in obj_scores)
-    assert all(isinstance(x[1], (float, np.floating)) for x in obj_scores)
-    # make sure all [0] elements are non-negative
-    assert all(x[0] > 0.0 for x in obj_scores)
-    assert all(x[1] > 0 for x in obj_scores)
+    assert isinstance(obj_scores[0][0], (float, np.floating))
 
     # initialize the crowding distances to negative for guards
     crowding_distances = np.full(len(obj_scores), -1.0, dtype=float)
@@ -165,8 +161,36 @@ def non_dominated_binary_tournament(ranks: npt.NDArray[int], distances: npt.NDAr
     # check if the two solutions are in the same front
     if ranks[t1] == ranks[t2]:
         # the one with the greatest crowding distance wins
-        return t1 if distances[t1] > distances[t2] else t2
+        return int(t1) if distances[t1] > distances[t2] else int(t2)
 
     # if they are in different fronts, the lower rank one wins
     else:
-        return t1 if ranks[t1] < ranks[t2] else t2
+        return int(t1) if ranks[t1] < ranks[t2] else int(t2)
+    
+
+@typechecked # for debugging purposes
+def non_dominated_truncate(fronts: List[npt.NDArray[int]], distances: npt.NDArray[float], N) -> npt.NDArray[int]:
+    # make sure that fronts and distances are the nonempty
+    assert sum([len(x) for x in fronts]) > 0 and len(distances) > 0
+    # make sure that fronts and distances are the same size
+    assert sum([len(x) for x in fronts]) == len(distances)
+    # check that first object in fronts is a numpy array
+    assert isinstance(fronts[0], np.ndarray)
+
+    # surviving solutions
+    survivors = []
+
+    # go through each front and add the solutions to the survivors
+    for front in fronts:
+        # add solutions without ordering based on distance (as is)
+        if len(survivors) + len(front) <= N:
+            survivors.extend(front)
+        else:
+            # sort the front by crowding distance in decending order
+            sorted_distance = np.flip(np.argsort(distances[front], kind='mergesort'))
+            sorted_front = front[sorted_distance]
+            survivors.extend(sorted_front[:N-len(survivors)])
+            break
+
+    assert len(survivors) == N
+    return np.array(survivors, dtype=int)
