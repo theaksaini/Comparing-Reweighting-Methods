@@ -120,7 +120,14 @@ class GA():
             individual.fitness = self.fitness_func(individual.program)
             # Update self.evaluated_individuals
             self.evaluated_individuals.loc[len(self.evaluated_individuals.index)] = {'individual':individual.program,'perf_fitness':individual.fitness[0],'fair_fitness':individual.fitness[1]}
+        
+        return pop
+    
 
+    def update_best_individual(self):
+        """
+        Updates the best individual from the current population using lexicase-style selection.
+        """
         candidates = self.population
         cases = list(range(len(self.population[0].fitness)))
     
@@ -129,9 +136,7 @@ class GA():
             candidates = [x for x in candidates if x.fitness[cases[0]] == best_val_for_case]
             cases.pop(0)
         self.best_individual = self.rng.choice(candidates)
-        
-        return pop
-    
+
 
     def step_optimize(self):
         """
@@ -142,16 +147,16 @@ class GA():
             ### Parent Selection
             pop = self.population
             parent_ids = []
-            scores = np.array([[ind.fitness[0], ind.fitness[1]] for ind in pop], dtype=np.float32)
+            scores = np.array([[ind.fitness[0], ind.fitness[1]] for ind in pop], dtype=float)
             parent_cnt = 2*self.pop_size # Number of parents to select; 2*pop_size because of crossover
 
             # get the fronts and rank
-            fronts, ranks = nsga.non_dominated_sorting(obj_scores=scores, weights=np.array([1, 1], dtype=np.float32))
+            fronts, ranks = nsga.non_dominated_sorting(obj_scores=scores, weights=np.array([1, 1], dtype=float))
             # make sure that the number of fronts is correct
             assert sum([len(f) for f in fronts]) == len(ranks)
 
-            # get crowding distance for each solution
-            crowding_distance = nsga.crowding_distance(scores, np.int32(2))
+            # get crowding distance for each solution (per-front)
+            crowding_distance = nsga.crowding_distance(scores, 2, fronts)
 
             # get parent_cnt number of parents
             for _ in range(parent_cnt):
@@ -163,27 +168,23 @@ class GA():
             for i in range(self.pop_size):
                 parent_a = pop[parent_ids[j]]
                 parent_b = pop[parent_ids[j+1]]
-
                 child = self.crossover(parent_a, parent_b)
-
                 child = self.mutation(child)
-
                 offspring.append(child)
-
                 j += 2
 
             # Evaluate the offspring
             offspring = self.evaluate_population(offspring)
 
             # combine both the population and offspring scores
-            offspring_scores = np.array([[ind.fitness[0], ind.fitness[1]] for ind in offspring], dtype=np.float32)
-            all_scores = np.array(np.concatenate((scores, offspring_scores), axis=0), dtype=np.float32)
+            offspring_scores = np.array([[ind.fitness[0], ind.fitness[1]] for ind in offspring], dtype=float)
+            all_scores = np.array(np.concatenate((scores, offspring_scores), axis=0), dtype=float)
 
             # get the fronts and rank
-            fronts, _ = nsga.non_dominated_sorting(obj_scores=all_scores, weights=np.array([1,1], dtype=np.float32))
+            fronts, _ = nsga.non_dominated_sorting(obj_scores=all_scores, weights=np.array([1,1], dtype=float))
 
-            # get crowding distance for each solution
-            crowding_distance = nsga.crowding_distance(all_scores, np.int32(2))
+            # get crowding distance for each solution (per-front)
+            crowding_distance = nsga.crowding_distance(all_scores, 2, fronts)
 
             # truncate the population to the population size with nsga ii
             survivor_ids = nsga.non_dominated_truncate(fronts, crowding_distance, self.pop_size)
@@ -228,16 +229,16 @@ class GA():
 
         print("Generation 1 started:")
         self.initialize_population()
-
+        self.update_best_individual()
         print("Generation 1 ended.")
+        print("Best Individual so far:", self.best_individual.fitness)
 
         # Rest of the generations
         for gen in range(self.max_gens - 1):
             print(f"Generation {gen + 2} started:")
             self.step_optimize()
+            self.update_best_individual()
             print(f"Generation {gen + 2} ended.")
-
-            # Print the best individual for GA
             print("Best Individual so far:", self.best_individual.fitness)
  
 
