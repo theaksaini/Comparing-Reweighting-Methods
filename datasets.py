@@ -36,7 +36,7 @@ def download_task(dataset_name, preprocess=True):
                     X = X.drop(col, axis=1)
 
             if dataset_name=='default_credit':
-                X['sex'] = w=X['sex'].map({1:'one', 2:'two'})
+                X['sex'] =X['sex'].map({1:'one', 2:'two'})
                 
             for col in X:
                 if len(X[col].unique())==1:
@@ -124,9 +124,7 @@ def download_pmad_task(dataset_name, outcome_name, preprocess=True):
 
 
 if __name__ == '__main__':
-    #not_able_to_download = ['meps19', 'meps21', 'meps20',]
-    datasets_binary = ['ricci', 'heart_disease', 'student_math', 'student_por', 'creditg', 'titanic', 'us_crime', 'compas_violent', 'nlsy', 'compas',
-            'speeddating',  'law_school', 'default_credit', 'bank', 'adult']
+    datasets_binary = ['heart_disease', 'student_math', 'student_por', 'creditg', 'titanic', 'us_crime', 'compas_violent', 'nlsy', 'compas']
     for ds in datasets_binary:
         download_task(ds)
     download_pmad_task('pmad_phq','PHQ9_risk2')

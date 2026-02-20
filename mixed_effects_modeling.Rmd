@@ -1,0 +1,219 @@
+---
+title: "Hierarchical Testing: Evolved Weights"
+date: "2026-02-20"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+
+rm(list = ls())
+cat("\014")
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+# Load Data and Libraries
+```{r load data & libraries, echo=TRUE}
+suppressWarnings(suppressPackageStartupMessages({
+  library(emmeans)
+  library(lme4)
+  library(brms)
+  library(lmerTest)
+  library(report) # bayesian reporting
+}))
+
+df = read.csv('all_hv.csv', header = TRUE, stringsAsFactors = FALSE)
+
+df$exp = as.factor(df$exp)
+df$exp = relevel(df$exp, ref='Equal Weights')
+
+df$objective1 = as.factor(ifelse(df$objective1==1,'AUROC','Acc'))
+df$objective1 = relevel(df$objective1, ref='AUROC')
+
+df$objective2 = as.factor(ifelse(df$objective2==1,'sFNR','DP'))
+df$objective2 = relevel(df$objective2, ref='sFNR')
+```
+
+
+# Distribution of hypervolume
+```{r distribution, echo=TRUE}
+# Pull hv, drop missing/non-finite values
+hv <- df$hv
+hv <- hv[is.finite(hv)]
+
+# --- Plot: histogram as density + red KDE line ---
+op <- par(mar = c(6, 6, 5, 2) + 0.1)  # bigger margins like the example
+
+h <- hist(
+  hv,
+  breaks = 10,                # adjust (e.g., 8, 12) to match binning
+  probability = TRUE,         # y-axis is density ("Probability" in your plot)
+  col = "gray85",
+  border = "black",
+  main = "Distribution of Hypervolume",
+  xlab = "Hypervolume",
+  ylab = "Density",
+  cex.main = 2.2,             # large bold title
+  font.main = 2,
+  cex.lab = 2.0,              # large axis labels
+  cex.axis = 1.7
+)
+
+# Density curve (red)
+lines(
+  density(hv, na.rm = TRUE),
+  col = "red",
+  lwd = 4
+)
+
+par(op)
+
+```
+
+
+
+# Mixed Effect Modeling
+## Using lme4 package
+```{r lme4, echo=TRUE}
+mod_lme4 = lmer(hv ~ exp + objective1 + objective2 + objective1*objective2 + exp*objective1 + exp*objective2 + (1|dataset/rep), data=df)
+anova(mod_lme4) # omnibus
+```
+
+***Data does not meet model assumptions for lme4.***
+```{r check assumptions}
+# check homogeneity of variance: failed
+plot(mod_lme4)
+
+# check normality of variance: failed
+qqnorm(resid(mod_lme4))
+
+# check normality of random effects: failed
+qqnorm(unlist(ranef(mod_lme4))); qqline(unlist(ranef(mod_lme4)))
+```
+
+## Using brms package
+Fit Bayesian generalized (non-)linear multivariate multilevel models using 'Stan' for full Bayesian inference.
+```{r brms, eval=FALSE}
+model = brm(
+  hv ~ exp*objective1*objective2 + (1|dataset/rep),
+  family = brms::zero_one_inflated_beta(),
+  chains = 2,
+  data = df
+)
+```
+
+```{r fit_reduced, eval=FALSE, include=FALSE}
+no_exp  = update(model, . ~ (objective1 * objective2) + (1 | dataset/rep))
+no_obj1  = update(model, . ~ (exp * objective2) + (1 | dataset/rep))
+no_obj2  = update(model, . ~ (exp * objective1) + (1 | dataset/rep))
+no_expXobj1  = update(model, . ~ (exp + objective1 + objective2 + exp:objective2 + objective1:objective2) + (1 | dataset/rep))
+no_expXobj2  = update(model, . ~ (exp + objective1 + objective2 + exp:objective1 + objective1:objective2) + (1 | dataset/rep))
+no_obj1Xobj2  = update(model, . ~ (exp + objective1 + objective2 + exp:objective1 + exp:objective2) + (1 | dataset/rep))
+no_3way  = update(model, . ~ (exp + objective1 + objective2 + exp:objective1 + exp:objective2 + objective1:objective2) + (1 | dataset/rep))
+
+saveRDS(model, file = "full_model.rds")
+saveRDS(no_exp, file = "no_exp.rds")
+saveRDS(no_obj1, file = "no_obj1.rds")
+saveRDS(no_obj2, file = "no_obj2.rds")
+saveRDS(no_expXobj1, file = "no_expXobj1.rds")
+saveRDS(no_expXobj2, file = "no_expXobj2.rds")
+saveRDS(no_obj1Xobj2, file = "no_obj1Xobj2.rds")
+saveRDS(no_3way, file = "no_3way.rds")
+```
+
+### Test of Effects
+Method of inference: Sivula, Magnusson and Vehtari (2020) \
+Resources:  https://arxiv.org/pdf/2008.10296, https://easystats.github.io/report/reference/report.compare.loo.html  \
+
+* Significant main effect of weighting method (exp). \
+* Significant main effect of performance objective (objective 1). \
+* Significant main effect of fairness objective (objective 2). \
+* Significant interaction between weighting method and fairness objective (objective 2). \
+* Interpretation: The effect of weighting method depends on fairness objective, regardless of choice of performance objective.
+
+```{r test_effects, echo=FALSE, message=FALSE, warning=FALSE}
+model = readRDS("full_model.rds")
+no_exp = readRDS("no_exp.rds")
+no_obj1 = readRDS("no_obj1.rds")
+no_obj2 = readRDS("no_obj2.rds")
+no_expXobj1 = readRDS("no_expXobj1.rds")
+no_expXobj2 = readRDS("no_expXobj2.rds")
+no_obj1Xobj2 = readRDS("no_obj1Xobj2.rds")
+no_3way = readRDS("no_3way.rds")
+
+reduced_models = list(no_exp, no_obj1, no_obj2, no_expXobj1, no_expXobj2, no_obj1Xobj2, no_3way)
+reduced_models_names = c("exp", "obj1", "obj2", "expXobj1", "expXobj2", "obj1Xobj2", "3way")
+
+term = c()
+elpd_diff = c()
+se_diff = c()
+for(m in 1:length(reduced_models)){
+  term = c(term, reduced_models_names[m])
+  compare_model = reduced_models[[m]]
+  x = loo_compare(loo(model), loo(compare_model))
+  elpd_diff = c(elpd_diff, x[2,1])
+  se_diff = c(se_diff, x[2,2])
+}
+
+results_df = data.frame(term = term,
+                        elpd_diff = elpd_diff,
+                        se_diff = se_diff)
+
+#results_df$z = ifelse(abs(results_df$elpd_diff) > 4, abs(results_df$elpd_diff)/results_df$se_diff, NA)
+#results_df$p = ifelse(is.na(results_df$z)==FALSE, 2*pnorm(-results_df$z), NA)
+
+results_df$z = abs(results_df$elpd_diff)/results_df$se_diff
+results_df$p = 2*pnorm(-results_df$z)
+results_df
+
+# check that hand-computed results match package
+# report(loo_compare(loo(model), loo(no_3way)))
+```
+
+### Probe Effects
+* Interpretation: Overall, evolved weights are most beneficial when optimizing on DP, regardless of what the other objective is. \
+Note that the point estimates displayed are medians (not means), and the intervals represent 95% credible intervals (Bayesian).
+```{r probe_effects_both, echo=FALSE, message=FALSE, warning=FALSE}
+emm = emmeans(
+  model,
+  ~ exp | objective1 * objective2 ,
+  type = "response" 
+)
+
+pairs(emm, type = "response", ratio = FALSE, adjust = "tukey")
+```
+
+```{r probe_effects_obj2, echo=FALSE, message=FALSE, warning=FALSE}
+model = readRDS("full_model.rds")
+emm = emmeans(
+  model,
+  ~ exp | objective2 ,
+  type = "response" 
+)
+
+pairs(emm, type = "response", ratio = FALSE, adjust = "tukey")
+```
+
+### Test of Contrasts
+* No difference between equal and deterministic weights. \
+* Evolved weights are significantly better than equal weights. \
+* Evolved weights are significantly better than deterministic weights. \
+* Evolved weights are significantly better than equal & deterministic weights (together). \
+
+Please note that the overall effects here are not directly interpretable since the effect of weighting method depends on choice of fairness objective.
+```{r contrasts, message=FALSE, warning=FALSE}
+emm = emmeans(
+  model, specs = "exp",
+  type = "response" 
+)
+
+contrast(emm, list(
+  "Equal vs Deterministic" = c(1, -1, 0),
+  "Equal vs Evolved" = c(1, 0, -1),
+  "Deterministic vs Evolved" = c(0, 1, -1),
+  "Equal+Deterministic vs Evolved" = c(0.5, 0.5, -1)
+), adjust="tukey", ratio = FALSE)
+```
