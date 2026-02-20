@@ -5,11 +5,10 @@ import argparse
 
 import experimental_setup as experimental_setup
 
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--metrics', type=str)
+    parser.add_argument('--results_folder', type=str, default='Results')
     args = parser.parse_args()
 
     ml_models = [RandomForestClassifier, LogisticRegression, XGBClassifier]
@@ -29,7 +28,7 @@ def main():
     experimental_setup.compare_reweighting_methods(ml_models= ml_models[0:1],
                                                    experiments=experiments1,
                                                    task_id_lists=datasets_binary,
-                                                   base_save_folder='results',
+                                                   base_save_folder=args.results_folder + '/' + args.metrics,
                                                    data_dir = data_dir,
                                                    num_runs=20,
                                                    objective_functions=objective_functions_combinations[args.metrics],
